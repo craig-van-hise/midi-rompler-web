@@ -1,0 +1,6 @@
+{
+  "name": "## MIDI ROMpler",
+  "description": "A web-based MIDI ROMpler using Tone.js",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
