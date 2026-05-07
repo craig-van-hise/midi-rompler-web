@@ -112,14 +112,17 @@ class AudioEngine {
     }
   }
 
-  noteOff(note: string) {
+  releaseNote(note: string | number) {
     if (!this.sampler || !this.isInitialized) return;
-    if (this.sampler instanceof Tone.Sampler) {
-      this.sampler.triggerRelease(note, Tone.now());
-    } else if (typeof this.sampler.stop === 'function') {
-      this.sampler.stop({
-        note: note
-      });
+    
+    // If the instrument is a smplr Soundfont
+    if (typeof this.sampler.stop === 'function') { 
+        // Pass the primitive note directly. Do NOT use { note: note }
+        this.sampler.stop(note); 
+    } 
+    // If the instrument is a Tone.Sampler
+    else if (typeof this.sampler.triggerRelease === 'function') {
+        this.sampler.triggerRelease(note, Tone.now());
     }
   }
 

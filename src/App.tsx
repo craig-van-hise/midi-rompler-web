@@ -100,13 +100,13 @@ export default function App() {
         let velocity = data2 / 127;
         const note = Tone.Frequency(data1, "midi").toNote();
         if (data2 === 0) {
-          audioEngine.noteOff(note); // Note on with 0 velocity is note off
+          audioEngine.releaseNote(note); // Note on with 0 velocity is note off
         } else {
           audioEngine.noteOn(note, velocity);
         }
       } else if (isNoteOff) {
         const note = Tone.Frequency(data1, "midi").toNote();
-        audioEngine.noteOff(note);
+        audioEngine.releaseNote(note);
       }
     };
 

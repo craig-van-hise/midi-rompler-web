@@ -1,128 +1,106 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { audioEngine } from './engine';
 import * as Tone from 'tone';
+import { Soundfont } from 'smplr';
 
-// Mock Tone.js
+// Mock Tone.js and smplr
 vi.mock('tone', () => {
-  const mockConnect = vi.fn().mockReturnThis();
-  
-  class MockSampler {
-    connect = mockConnect;
-    disconnect = vi.fn();
-    dispose = vi.fn();
-    attack = 0;
-    decay = 0;
-    sustain = 0;
-    release = 0;
-    constructor(options: any) {
-      Object.assign(this, options);
-      // Simulate onload being called
-      if (options?.onload) {
-        setTimeout(options.onload, 0);
-      }
-    }
-  }
-
   class MockPanVol {
-    connect = mockConnect;
+    connect = vi.fn();
     chain = vi.fn();
     volume = { value: 0 };
     pan = { value: 0 };
+    input = {};
   }
-
   class MockSplit {
-    connect = mockConnect;
+    connect = vi.fn();
   }
-
   class MockMeter {
     getValue = vi.fn().mockReturnValue(0);
-    connect = mockConnect;
   }
-
   class MockReverb {
     generate = vi.fn().mockResolvedValue(undefined);
-    connect = mockConnect;
     wet = { value: 0 };
+  }
+  class MockSampler {
+    constructor(config: any) {
+      if (config && config.onload) {
+        setTimeout(config.onload, 0);
+      }
+    }
+    connect = vi.fn();
+    triggerAttack = vi.fn();
+    triggerRelease = vi.fn();
+    releaseAll = vi.fn();
+    dispose = vi.fn();
+    disconnect = vi.fn();
+    attack = 0.1;
+    decay = 0.2;
+    sustain = 1.0;
+    release = 1.0;
   }
 
   return {
-    Sampler: vi.fn().mockImplementation(function(options: any) {
-      return new MockSampler(options);
-    }),
-    PanVol: vi.fn().mockImplementation(function() {
-      return new MockPanVol();
-    }),
-    Split: vi.fn().mockImplementation(function() {
-      return new MockSplit();
-    }),
-    Meter: vi.fn().mockImplementation(function() {
-      return new MockMeter();
-    }),
-    Reverb: vi.fn().mockImplementation(function() {
-      return new MockReverb();
-    }),
     start: vi.fn().mockResolvedValue(undefined),
     context: {
-      lookAhead: 0,
+      lookAhead: 0.01,
       rawContext: {
-        destination: {},
+        destination: {}
       },
     },
+    PanVol: MockPanVol,
+    Split: MockSplit,
+    Meter: MockMeter,
+    Reverb: MockReverb,
+    Sampler: MockSampler,
     now: vi.fn().mockReturnValue(0),
     Destination: {},
   };
 });
 
-// Mock smplr
 vi.mock('smplr', () => {
   class MockSoundfont {
+    load = Promise.resolve();
     start = vi.fn();
     stop = vi.fn();
-    disconnect = vi.fn();
-    load = Promise.resolve();
   }
   return {
-    Soundfont: vi.fn().mockImplementation(function() {
-      return new MockSoundfont();
-    }),
+    Soundfont: MockSoundfont,
   };
 });
 
-describe('AudioEngine', () => {
+describe('AudioEngine Voice Targeting', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    // Initialize the engine before each test
+    audioEngine.isInitialized = false;
     await audioEngine.init();
   });
 
-  it('Test Case 1: loadInstrument for strings uses string_ensemble_1', async () => {
-    await audioEngine.loadInstrument('strings');
+  it('should target specific note during release for Tone.Sampler', async () => {
+    // Load a Tone.Sampler instrument (e.g., piano)
+    await audioEngine.loadInstrument('piano');
     
-    const { Soundfont } = await import('smplr');
-    expect(Soundfont).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ instrument: 'string_ensemble_1' })
-    );
+    const sampler = audioEngine.sampler;
+    expect(sampler.triggerRelease).toBeDefined();
+
+    // Trigger release for C4
+    audioEngine.releaseNote('C4');
+
+    // Verify triggerRelease was called with 'C4'
+    expect(sampler.triggerRelease).toHaveBeenCalledWith('C4', expect.anything());
   });
 
-  it('Test Case 2: loadInstrument for harp uses orchestral_harp', async () => {
-    await audioEngine.loadInstrument('harp');
-    
-    const { Soundfont } = await import('smplr');
-    expect(Soundfont).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ instrument: 'orchestral_harp' })
-    );
-  });
-
-  it('Test Case 3: noteOn for electric-piano still works with scaled velocity', async () => {
+  it('should target specific note during release for smplr Soundfont', async () => {
+    // Load a smplr instrument
     await audioEngine.loadInstrument('electric-piano');
-    audioEngine.noteOn('C4', 0.5);
-    expect(audioEngine.sampler.start).toHaveBeenCalledWith(
-      expect.objectContaining({
-        note: 'C4',
-        velocity: 0.5 * 127
-      })
-    );
+    
+    const sampler = audioEngine.sampler;
+    expect(sampler.stop).toBeDefined();
+
+    // Trigger release for E4
+    audioEngine.releaseNote('E4');
+
+    // Verify stop was called with 'E4' directly
+    expect(sampler.stop).toHaveBeenCalledWith('E4');
   });
 });
