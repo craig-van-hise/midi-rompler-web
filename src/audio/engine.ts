@@ -8,12 +8,98 @@ const SMPLR_MAP: Record<string, string> = {
   'electric-piano': 'electric_piano_1',
   'harp': 'orchestral_harp',
   'vibraphone': 'vibraphone',
-  'strings': 'string_ensemble_1',
   'celeste': 'celesta'
 };
 
+class LoopedSampler {
+  buffers: Tone.ToneAudioBuffers;
+  output: Tone.Volume;
+  activeVoices: Map<string | number, { player: Tone.Player, env: Tone.AmplitudeEnvelope }>;
+  envelope: { attack: number, decay: number, sustain: number, release: number };
+
+  loaded: Promise<void>;
+
+  constructor(urls: Record<string, string>, baseUrl: string = '') {
+    this.output = new Tone.Volume(0);
+    this.activeVoices = new Map();
+    this.envelope = { attack: 0.1, decay: 0.1, sustain: 1.0, release: 1.0 };
+    this.loaded = new Promise((resolve) => {
+      this.buffers = new Tone.ToneAudioBuffers(urls, () => resolve(), baseUrl);
+    });
+  }
+
+  triggerAttack(note: string | number) {
+    if (this.activeVoices.has(note)) return; // prevent re-triggering active note
+    
+    // Assume root note is C4 for the string sample (Adjust if the user maps multiple)
+    const rootNote = Tone.Frequency('C4').toMidi(); 
+    const targetNote = Tone.Frequency(note).toMidi();
+    const interval = targetNote - rootNote;
+    
+    const buffer = this.buffers.get('C4'); // Get the root buffer
+    if (!buffer) return;
+
+    const player = new Tone.Player(buffer);
+    player.loop = true; // INFINITE SUSTAIN
+
+    // Trim the sample to loop only the steady sustain phase (20% to 80%)
+    const loopStart = buffer.duration * 0.2;
+    const loopEnd = buffer.duration * 0.8;
+    if (loopEnd > loopStart) {
+      player.loopStart = loopStart;
+      player.loopEnd = loopEnd;
+    }
+
+    player.playbackRate = Math.pow(2, interval / 12); // Varispeed pitch shift
+    
+    const env = new Tone.AmplitudeEnvelope(this.envelope);
+    player.connect(env);
+    env.connect(this.output);
+    
+    this.activeVoices.set(note, { player, env });
+    
+    player.start();
+    env.triggerAttack();
+  }
+
+  triggerRelease(note: string | number) {
+    const voice = this.activeVoices.get(note);
+    if (!voice) return;
+    
+    voice.env.triggerRelease();
+    this.activeVoices.delete(note);
+    
+    // Garbage collect after release phase
+    setTimeout(() => {
+      voice.player.dispose();
+      voice.env.dispose();
+    }, (this.envelope.release + 0.1) * 1000);
+  }
+
+  // Allow dynamic ADSR updates
+  set(params: { envelope?: Partial<{ attack: number, decay: number, sustain: number, release: number }> }) {
+    if (params.envelope) {
+      this.envelope = { ...this.envelope, ...params.envelope };
+    }
+  }
+
+  disconnect() {
+    this.output.disconnect();
+  }
+
+  dispose() {
+    this.activeVoices.forEach(voice => {
+      voice.player.dispose();
+      voice.env.dispose();
+    });
+    this.activeVoices.clear();
+    this.buffers.dispose();
+    this.output.dispose();
+  }
+}
+
 class AudioEngine {
-  sampler: Tone.Sampler | any | null = null;
+  sampler: Tone.Sampler | any | LoopedSampler | null = null;
   panVol: Tone.PanVol | null = null;
   splitter: Tone.Split | null = null;
   meterL: Tone.Meter | null = null;
@@ -57,35 +143,59 @@ class AudioEngine {
   async loadInstrument(instrument: string): Promise<void> {
     if (!this.isInitialized) return;
 
+    // Disconnect and dispose old sampler
+    if (this.sampler) {
+      if (typeof (this.sampler as any).disconnect === 'function') {
+        (this.sampler as any).disconnect();
+      }
+      if (typeof (this.sampler as any).dispose === 'function') {
+        (this.sampler as any).dispose();
+      }
+    }
+
+    if (instrument === 'strings') {
+      try {
+        // 1. Fetch the Base64 JS payload from the CDN
+        const response = await fetch('https://gleitz.github.io/midi-js-soundfonts/MusyngKite/string_ensemble_1-ogg.js');
+        const text = await response.text();
+        
+        // 2. Extract the C4 Data URI
+        const match = text.match(/"C4":\s*"(data:audio\/ogg;base64,[^"]+)"/);
+        if (!match || !match[1]) {
+          throw new Error("Failed to parse C4 Base64 data from soundfont.");
+        }
+        const dataUri = match[1];
+        
+        // 3. Initialize LoopedSampler with the raw Data URI and an empty baseUrl
+        const loopedSampler = new LoopedSampler({ 'C4': dataUri }, '');
+        
+        await loopedSampler.loaded;
+        this.sampler = loopedSampler;
+        if (this.panVol) {
+          this.sampler.output.connect(this.panVol);
+        }
+      } catch (err) {
+        console.error("String sample failed to load:", err);
+      }
+      return;
+    }
+
+    if (SMPLR_MAP[instrument]) {
+      const smplr = new Soundfont(Tone.context.rawContext as AudioContext, {
+        instrument: SMPLR_MAP[instrument] as any,
+        destination: (this.panVol as any)?.input || Tone.context.rawContext.destination
+      });
+      
+      this.sampler = smplr;
+      await smplr.load;
+      console.log(`Loaded ${instrument} (smplr: ${SMPLR_MAP[instrument]})`);
+      return;
+    }
+
+    const sampleMap = this.getSampleMap(instrument);
+    const baseUrl = `${BASE_URL}${instrument}/`;
+
     return new Promise((resolve) => {
-      // Disconnect and dispose old sampler
-      if (this.sampler) {
-        if (typeof (this.sampler as any).disconnect === 'function') {
-          (this.sampler as any).disconnect();
-        }
-        if (typeof (this.sampler as any).dispose === 'function') {
-          (this.sampler as any).dispose();
-        }
-      }
-
-      if (SMPLR_MAP[instrument]) {
-        const smplr = new Soundfont(Tone.context.rawContext as AudioContext, {
-          instrument: SMPLR_MAP[instrument] as any,
-          destination: (this.panVol as any)?.input || Tone.context.rawContext.destination
-        });
-        
-        this.sampler = smplr;
-        
-        smplr.load.then(() => {
-          console.log(`Loaded ${instrument} (smplr: ${SMPLR_MAP[instrument]})`);
-          resolve();
-        });
-        return;
-      }
-
-      const sampleMap = this.getSampleMap(instrument);
-      const baseUrl = `${BASE_URL}${instrument}/`;
-
       this.sampler = new Tone.Sampler({
         urls: sampleMap,
         baseUrl: baseUrl,
@@ -102,8 +212,8 @@ class AudioEngine {
 
   noteOn(note: string, velocity?: number) {
     if (!this.sampler || !this.isInitialized) return;
-    if (this.sampler instanceof Tone.Sampler) {
-      this.sampler.triggerAttack(note, Tone.now(), velocity);
+    if (this.sampler instanceof Tone.Sampler || this.sampler instanceof LoopedSampler) {
+      this.sampler.triggerAttack(note);
     } else if (typeof this.sampler.start === 'function') {
       this.sampler.start({
         note: note,
@@ -115,8 +225,12 @@ class AudioEngine {
   releaseNote(note: string | number) {
     if (!this.sampler || !this.isInitialized) return;
     
+    // If the instrument is a LoopedSampler
+    if (this.sampler instanceof LoopedSampler) {
+      this.sampler.triggerRelease(note);
+    }
     // If the instrument is a smplr Soundfont
-    if (typeof this.sampler.stop === 'function') { 
+    else if (typeof this.sampler.stop === 'function') { 
         // Pass the primitive note directly. Do NOT use { note: note }
         this.sampler.stop(note); 
     } 
@@ -130,6 +244,8 @@ class AudioEngine {
     if (!this.sampler || !this.isInitialized) return;
     if (this.sampler instanceof Tone.Sampler) {
       this.sampler.releaseAll();
+    } else if (this.sampler instanceof LoopedSampler) {
+      this.sampler.activeVoices.forEach((_, note) => this.sampler.triggerRelease(note));
     } else if (typeof this.sampler.stop === 'function') {
       this.sampler.stop();
     }
@@ -174,23 +290,39 @@ class AudioEngine {
   }
 
   setAttack(attack: number) {
-    if (!this.sampler || !(this.sampler instanceof Tone.Sampler)) return;
-    this.sampler.attack = attack;
+    if (!this.sampler) return;
+    if (this.sampler instanceof Tone.Sampler) {
+      this.sampler.attack = attack;
+    } else if (this.sampler instanceof LoopedSampler) {
+      this.sampler.set({ envelope: { attack } });
+    }
   }
 
   setDecay(decay: number) {
-    if (!this.sampler || !(this.sampler instanceof Tone.Sampler)) return;
-    this.sampler.decay = decay;
+    if (!this.sampler) return;
+    if (this.sampler instanceof Tone.Sampler) {
+      this.sampler.decay = decay;
+    } else if (this.sampler instanceof LoopedSampler) {
+      this.sampler.set({ envelope: { decay } });
+    }
   }
 
   setSustain(sustain: number) {
-    if (!this.sampler || !(this.sampler instanceof Tone.Sampler)) return;
-    this.sampler.sustain = sustain;
+    if (!this.sampler) return;
+    if (this.sampler instanceof Tone.Sampler) {
+      this.sampler.sustain = sustain;
+    } else if (this.sampler instanceof LoopedSampler) {
+      this.sampler.set({ envelope: { sustain } });
+    }
   }
 
   setRelease(release: number) {
-    if (!this.sampler || !(this.sampler instanceof Tone.Sampler)) return;
-    this.sampler.release = release;
+    if (!this.sampler) return;
+    if (this.sampler instanceof Tone.Sampler) {
+      this.sampler.release = release;
+    } else if (this.sampler instanceof LoopedSampler) {
+      this.sampler.set({ envelope: { release } });
+    }
   }
 
   public getSampleMap(instrument: string): Record<string, string> {
