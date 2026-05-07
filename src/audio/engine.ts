@@ -1,10 +1,19 @@
 import * as Tone from 'tone';
+import { Soundfont } from 'smplr';
 
 // The baseUrl containing samples
 const BASE_URL = 'https://nbrosowsky.github.io/tonejs-instruments/samples/';
 
+const SMPLR_MAP: Record<string, string> = {
+  'electric-piano': 'electric_piano_1',
+  'harp': 'orchestral_harp',
+  'vibraphone': 'vibraphone',
+  'strings': 'string_ensemble_1',
+  'celeste': 'celesta'
+};
+
 class AudioEngine {
-  sampler: Tone.Sampler | null = null;
+  sampler: Tone.Sampler | any | null = null;
   panVol: Tone.PanVol | null = null;
   splitter: Tone.Split | null = null;
   meterL: Tone.Meter | null = null;
@@ -51,17 +60,35 @@ class AudioEngine {
     return new Promise((resolve) => {
       // Disconnect and dispose old sampler
       if (this.sampler) {
-        this.sampler.disconnect();
-        this.sampler.dispose();
+        if (typeof (this.sampler as any).disconnect === 'function') {
+          (this.sampler as any).disconnect();
+        }
+        if (typeof (this.sampler as any).dispose === 'function') {
+          (this.sampler as any).dispose();
+        }
+      }
+
+      if (SMPLR_MAP[instrument]) {
+        const smplr = new Soundfont(Tone.context.rawContext as AudioContext, {
+          instrument: SMPLR_MAP[instrument] as any,
+          destination: (this.panVol as any)?.input || Tone.context.rawContext.destination
+        });
+        
+        this.sampler = smplr;
+        
+        smplr.load.then(() => {
+          console.log(`Loaded ${instrument} (smplr: ${SMPLR_MAP[instrument]})`);
+          resolve();
+        });
+        return;
       }
 
       const sampleMap = this.getSampleMap(instrument);
-      let folderName = instrument;
-      if (instrument === 'electric-piano') folderName = 'piano';
+      const baseUrl = `${BASE_URL}${instrument}/`;
 
       this.sampler = new Tone.Sampler({
         urls: sampleMap,
-        baseUrl: `${BASE_URL}${folderName}/`,
+        baseUrl: baseUrl,
         onload: () => {
           if (this.sampler && this.panVol) {
              this.sampler.connect(this.panVol);
@@ -75,17 +102,34 @@ class AudioEngine {
 
   noteOn(note: string, velocity?: number) {
     if (!this.sampler || !this.isInitialized) return;
-    this.sampler.triggerAttack(note, Tone.now(), velocity);
+    if (this.sampler instanceof Tone.Sampler) {
+      this.sampler.triggerAttack(note, Tone.now(), velocity);
+    } else if (typeof this.sampler.start === 'function') {
+      this.sampler.start({
+        note: note,
+        velocity: (velocity ?? 1) * 127
+      });
+    }
   }
 
   noteOff(note: string) {
     if (!this.sampler || !this.isInitialized) return;
-    this.sampler.triggerRelease(note, Tone.now());
+    if (this.sampler instanceof Tone.Sampler) {
+      this.sampler.triggerRelease(note, Tone.now());
+    } else if (typeof this.sampler.stop === 'function') {
+      this.sampler.stop({
+        note: note
+      });
+    }
   }
 
   releaseAll() {
     if (!this.sampler || !this.isInitialized) return;
-    this.sampler.releaseAll();
+    if (this.sampler instanceof Tone.Sampler) {
+      this.sampler.releaseAll();
+    } else if (typeof this.sampler.stop === 'function') {
+      this.sampler.stop();
+    }
   }
 
   setVolume(db: number) {
@@ -127,26 +171,26 @@ class AudioEngine {
   }
 
   setAttack(attack: number) {
-    if (!this.sampler) return;
+    if (!this.sampler || !(this.sampler instanceof Tone.Sampler)) return;
     this.sampler.attack = attack;
   }
 
   setDecay(decay: number) {
-    if (!this.sampler) return;
+    if (!this.sampler || !(this.sampler instanceof Tone.Sampler)) return;
     this.sampler.decay = decay;
   }
 
   setSustain(sustain: number) {
-    if (!this.sampler) return;
+    if (!this.sampler || !(this.sampler instanceof Tone.Sampler)) return;
     this.sampler.sustain = sustain;
   }
 
   setRelease(release: number) {
-    if (!this.sampler) return;
+    if (!this.sampler || !(this.sampler instanceof Tone.Sampler)) return;
     this.sampler.release = release;
   }
 
-  private getSampleMap(instrument: string): Record<string, string> {
+  public getSampleMap(instrument: string): Record<string, string> {
     if (instrument === 'piano') {
       return {
         'A1': 'A1.mp3', 'A2': 'A2.mp3', 'A3': 'A3.mp3', 'A4': 'A4.mp3', 'A5': 'A5.mp3', 'A6': 'A6.mp3',
@@ -158,10 +202,10 @@ class AudioEngine {
     
     if (instrument === 'electric-piano') {
         return {
-            'A1': 'A1.mp3', 'A2': 'A2.mp3', 'A3': 'A3.mp3', 'A4': 'A4.mp3', 'A5': 'A5.mp3',
-            'C1': 'C1.mp3', 'C2': 'C2.mp3', 'C3': 'C3.mp3', 'C4': 'C4.mp3', 'C5': 'C5.mp3',
-            'D#1': 'Ds1.mp3', 'D#2': 'Ds2.mp3', 'D#3': 'Ds3.mp3', 'D#4': 'Ds4.mp3', 'D#5': 'Ds5.mp3',
-            'F#1': 'Fs1.mp3', 'F#2': 'Fs2.mp3', 'F#3': 'Fs3.mp3', 'F#4': 'Fs4.mp3', 'F#5': 'Fs5.mp3',
+            'C2': 'C2.mp3',
+            'C3': 'C3.mp3',
+            'C4': 'C4.mp3',
+            'C5': 'C5.mp3'
         };
     }
 

@@ -1,0 +1,29 @@
+
+/Users/vv2024/Documents/Repos - vv2024/MIDI/WebApps/midi-rompler-web
+├── PROJECT_STATE.md
+├── README.md
+├── index.html
+├── metadata.json
+├── package-lock.json
+├── package.json
+├── project_tree.txt
+├── src
+|  ├── App.tsx
+|  ├── audio
+|  |  ├── engine.ts
+|  |  └── useMidi.ts
+|  ├── components
+|  |  ├── Knob.tsx
+|  |  └── VUMeter.tsx
+|  ├── index.css
+|  ├── lib
+|  |  └── utils.ts
+|  └── main.tsx
+├── tsconfig.json
+└── vite.config.ts
+
+directory: 4 file: 17
+
+
+
+[2K[1G

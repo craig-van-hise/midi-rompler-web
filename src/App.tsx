@@ -266,6 +266,10 @@ export default function App() {
                        >
                          <option value="piano">PIANO</option>
                          <option value="electric-piano">ELECTRIC PIANO</option>
+                         <option value="harp">HARP</option>
+                         <option value="vibraphone">VIBRAPHONE</option>
+                         <option value="strings">STRINGS</option>
+                         <option value="celeste">CELESTE</option>
                          <option value="guitar-acoustic">ACOUSTIC GUITAR</option>
                          <option value="bass-electric">ELECTRIC BASS</option>
                        </select>
