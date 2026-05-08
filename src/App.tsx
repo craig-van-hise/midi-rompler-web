@@ -350,8 +350,21 @@ export default function App() {
                    <a href="https://virtualvirgin.net" target="_blank" rel="noreferrer" className="text-[#00ff88] hover:underline">virtualvirgin.net</a>
                    <a href="https://github.com/craig-van-hise" target="_blank" rel="noreferrer" className="text-[#00ff88] hover:underline">github.com/craig-van-hise</a>
                 </div>
-                <div className="mt-6 pt-4 border-t border-[#2a2a2e] italic opacity-80 text-xs">
-                   Samples provided by tonejs-instruments
+                <div className="w-full h-px bg-[#2a2a2e] my-6"></div>
+
+                <div className="mt-6">
+                    <h3 className="text-sm font-bold text-white mb-3 tracking-widest uppercase">Credits & Attribution</h3>
+                    <ul className="space-y-3 text-xs text-[#8a8a93] leading-relaxed">
+                        <li>
+                            <strong className="text-[#00ff88]">Tone.js Instruments:</strong> Acoustic Piano, Guitar, and Bass samples provided by <a href="https://github.com/nbrosowsky/tonejs-instruments" target="_blank" rel="noopener noreferrer" className="text-white hover:underline">nbrosowsky</a>.
+                        </li>
+                        <li>
+                            <strong className="text-[#00ff88]">smplr Library:</strong> Electric Piano, Harp, Vibraphone, and Celeste playback powered by <a href="https://github.com/danigb/smplr" target="_blank" rel="noopener noreferrer" className="text-white hover:underline">smplr (danigb)</a>.
+                        </li>
+                        <li>
+                            <strong className="text-[#00ff88]">MIDI.js Soundfonts:</strong> String Ensemble sample from MusyngKite, hosted by <a href="https://github.com/gleitz/midi-js-soundfonts" target="_blank" rel="noopener noreferrer" className="text-white hover:underline">gleitz</a>.
+                        </li>
+                    </ul>
                 </div>
              </div>
              <button 

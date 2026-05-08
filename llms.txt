@@ -1,0 +1,14 @@
+# VV | MIDI Rompler
+
+A professional web-based MIDI Rompler built with React, Tone.js, and smplr.
+
+## Core Documentation
+- [README.md](README.md): Project overview, features, and setup instructions.
+- [PROJECT_STATE.md](PROJECT_STATE.md): Current architecture, tech stack, and system capabilities.
+
+## Source Code
+- [src/App.tsx](src/App.tsx): Main application component and UI state management.
+- [src/audio/engine.ts](src/audio/engine.ts): Hybrid audio engine managing Tone.js samplers and smplr patches.
+- [src/audio/useMidi.ts](src/audio/useMidi.ts): Custom hook for Web MIDI integration and sustain pedal logic.
+- [src/components/Knob.tsx](src/components/Knob.tsx): Custom skeuomorphic knob component.
+- [src/components/VUMeter.tsx](src/components/VUMeter.tsx): Real-time visual feedback for audio levels.

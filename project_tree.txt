@@ -1,15 +1,37 @@
 
 /Users/vv2024/Documents/Repos - vv2024/MIDI/WebApps/midi-rompler-web
+├── # Prompts
+|  ├── # 14.md
+|  └── XOlder
+|     ├── # 1.md
+|     ├── # 10.md
+|     ├── # 11.md
+|     ├── # 12.md
+|     ├── # 13.md
+|     ├── # 2.md
+|     ├── # 3.md
+|     ├── # 4.md
+|     ├── # 5.md
+|     ├── # 6.md
+|     ├── # 7.md
+|     ├── # 8.md
+|     └── # 9.md
+├── PROJECT_CONTEXT_BUNDLE.md
 ├── PROJECT_STATE.md
 ├── README.md
 ├── index.html
+├── llms.txt
 ├── metadata.json
 ├── package-lock.json
 ├── package.json
 ├── project_tree.txt
+├── public
+|  └── samples
+|     └── electric-piano
 ├── src
 |  ├── App.tsx
 |  ├── audio
+|  |  ├── engine.test.ts
 |  |  ├── engine.ts
 |  |  └── useMidi.ts
 |  ├── components
@@ -22,8 +44,9 @@
 ├── tsconfig.json
 └── vite.config.ts
 
-directory: 4 file: 17
+directory: 656 file: 4995
 
+ignored: directory (73)
 
 
 [2K[1G
