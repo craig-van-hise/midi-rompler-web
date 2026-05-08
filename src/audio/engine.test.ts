@@ -4,6 +4,19 @@ import * as Tone from 'tone';
 import { Soundfont } from 'smplr';
 
 // Mock Tone.js and smplr
+const { mockAmplitudeEnvelope } = vi.hoisted(() => {
+  const mockEnv = vi.fn().mockImplementation(function() {
+    this.connect = vi.fn();
+    this.triggerAttack = vi.fn();
+    this.triggerRelease = vi.fn();
+    this.dispose = vi.fn();
+  });
+
+  return {
+    mockAmplitudeEnvelope: mockEnv,
+  }
+})
+
 vi.mock('tone', () => {
   class MockPanVol {
     connect = vi.fn();
@@ -21,6 +34,22 @@ vi.mock('tone', () => {
   class MockReverb {
     generate = vi.fn().mockResolvedValue(undefined);
     wet = { value: 0 };
+  }
+  class MockGain {
+    connect = vi.fn();
+    gain = { value: 1 };
+    constructor(val: number) {
+      this.gain.value = val;
+    }
+  }
+  class MockVolume {
+    connect = vi.fn();
+    disconnect = vi.fn();
+    dispose = vi.fn();
+    volume = { value: 0 };
+    constructor(val: number) {
+      this.volume.value = val;
+    }
   }
   class MockSampler {
     constructor(config: any) {
@@ -53,8 +82,30 @@ vi.mock('tone', () => {
     Meter: MockMeter,
     Reverb: MockReverb,
     Sampler: MockSampler,
+    Gain: MockGain,
+    Volume: MockVolume,
+    AmplitudeEnvelope: mockAmplitudeEnvelope,
     now: vi.fn().mockReturnValue(0),
     Destination: {},
+    Frequency: (note: string) => ({
+      toMidi: () => (note === 'C4' ? 60 : 64)
+    }),
+    Player: class {
+      connect = vi.fn();
+      start = vi.fn();
+      dispose = vi.fn();
+      set loop(val: boolean) {}
+      set loopStart(val: number) {}
+      set loopEnd(val: number) {}
+      set playbackRate(val: number) {}
+    },
+    ToneAudioBuffers: class {
+      constructor(urls: any, onload: any) {
+        setTimeout(onload, 0);
+      }
+      get() { return { duration: 1 }; }
+      dispose = vi.fn();
+    }
   };
 });
 
@@ -67,6 +118,11 @@ vi.mock('smplr', () => {
   return {
     Soundfont: MockSoundfont,
   };
+});
+
+// Mock fetch for strings loading
+global.fetch = vi.fn().mockResolvedValue({
+  text: () => Promise.resolve('"C4": "data:audio/ogg;base64,AAA"')
 });
 
 describe('AudioEngine Voice Targeting', () => {
@@ -102,5 +158,43 @@ describe('AudioEngine Voice Targeting', () => {
 
     // Verify stop was called with 'E4' directly
     expect(sampler.stop).toHaveBeenCalledWith('E4');
+  });
+});
+
+describe('AudioEngine Gain Staging', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    audioEngine.isInitialized = false;
+    await audioEngine.init();
+  });
+
+  it('should set internalTrim gain to 2.5 for harp', async () => {
+    await audioEngine.loadInstrument('harp');
+    expect(audioEngine.internalTrim?.gain.value).toBe(2.5);
+  });
+
+  it('should set internalTrim gain to 1.0 for piano', async () => {
+    await audioEngine.loadInstrument('piano');
+    expect(audioEngine.internalTrim?.gain.value).toBe(1.0);
+  });
+});
+
+describe('AudioEngine LoopedSampler Velocity', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    audioEngine.isInitialized = false;
+    await audioEngine.init();
+  });
+
+  it('should pass velocity to AmplitudeEnvelope in LoopedSampler', async () => {
+    await audioEngine.loadInstrument('strings');
+    
+    // Trigger attack via noteOn
+    audioEngine.noteOn('C4', 0.5);
+    
+    // We need to inspect the internal activeVoices map or the created envelope
+    expect(mockAmplitudeEnvelope).toHaveBeenCalled();
+    const mockEnvInstance = mockAmplitudeEnvelope.mock.instances[0];
+    expect(mockEnvInstance.triggerAttack).toHaveBeenCalledWith(expect.any(Number), 0.5);
   });
 });

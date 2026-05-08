@@ -28,7 +28,7 @@ class LoopedSampler {
     });
   }
 
-  triggerAttack(note: string | number) {
+  triggerAttack(note: string | number, velocity: number = 1) {
     if (this.activeVoices.has(note)) return; // prevent re-triggering active note
     
     // Assume root note is C4 for the string sample (Adjust if the user maps multiple)
@@ -59,7 +59,7 @@ class LoopedSampler {
     this.activeVoices.set(note, { player, env });
     
     player.start();
-    env.triggerAttack();
+    env.triggerAttack(Tone.now(), velocity);
   }
 
   triggerRelease(note: string | number) {
@@ -105,6 +105,7 @@ class AudioEngine {
   meterL: Tone.Meter | null = null;
   meterR: Tone.Meter | null = null;
   reverb: Tone.Reverb | null = null;
+  internalTrim: Tone.Gain | null = null;
   
   isInitialized = false;
 
@@ -129,13 +130,16 @@ class AudioEngine {
     
     await this.reverb.generate(); // Ensure impulse response is created
 
+    this.internalTrim = new Tone.Gain(1);
+    this.internalTrim.connect(this.panVol);
+
     this.panVol.connect(this.splitter);
     this.splitter.connect(this.meterL, 0, 0);
     this.splitter.connect(this.meterR, 1, 0);
     this.panVol.chain(this.reverb, Tone.Destination);
 
     // Create a dummy sampler just to have the chain setup
-    this.sampler = new Tone.Sampler().connect(this.panVol);
+    this.sampler = new Tone.Sampler().connect(this.internalTrim);
 
     this.isInitialized = true;
   }
@@ -171,53 +175,66 @@ class AudioEngine {
         
         await loopedSampler.loaded;
         this.sampler = loopedSampler;
-        if (this.panVol) {
-          this.sampler.output.connect(this.panVol);
+        if (this.internalTrim) {
+          this.sampler.output.connect(this.internalTrim);
         }
       } catch (err) {
         console.error("String sample failed to load:", err);
       }
-      return;
-    }
-
-    if (SMPLR_MAP[instrument]) {
+    } else if (SMPLR_MAP[instrument]) {
       const smplr = new Soundfont(Tone.context.rawContext as AudioContext, {
         instrument: SMPLR_MAP[instrument] as any,
-        destination: (this.panVol as any)?.input || Tone.context.rawContext.destination
+        destination: (this.internalTrim as any) || (this.panVol as any)?.input || Tone.context.rawContext.destination
       });
       
       this.sampler = smplr;
       await smplr.load;
       console.log(`Loaded ${instrument} (smplr: ${SMPLR_MAP[instrument]})`);
-      return;
+    } else {
+      const sampleMap = this.getSampleMap(instrument);
+      const baseUrl = `${BASE_URL}${instrument}/`;
+
+      await new Promise<void>((resolve) => {
+        this.sampler = new Tone.Sampler({
+          urls: sampleMap,
+          baseUrl: baseUrl,
+          onload: () => {
+            if (this.sampler && this.internalTrim) {
+              this.sampler.connect(this.internalTrim);
+              console.log(`Loaded ${instrument}`);
+            }
+            resolve();
+          }
+        });
+      });
     }
 
-    const sampleMap = this.getSampleMap(instrument);
-    const baseUrl = `${BASE_URL}${instrument}/`;
+    // Apply Gain Staging Map
+    const gainMap: Record<string, number> = {
+      'electric-piano': 2.0,
+      'vibraphone': 2.0,
+      'strings': 2.0,
+      'celeste': 2.0,
+      'harp': 2.5
+    };
 
-    return new Promise((resolve) => {
-      this.sampler = new Tone.Sampler({
-        urls: sampleMap,
-        baseUrl: baseUrl,
-        onload: () => {
-          if (this.sampler && this.panVol) {
-             this.sampler.connect(this.panVol);
-             console.log(`Loaded ${instrument}`);
-          }
-          resolve();
-        }
-      });
-    });
+    if (this.internalTrim) {
+      this.internalTrim.gain.value = gainMap[instrument] || 1.0;
+    }
   }
 
-  noteOn(note: string, velocity?: number) {
+  noteOn(note: string, velocity: number = 1) {
     if (!this.sampler || !this.isInitialized) return;
-    if (this.sampler instanceof Tone.Sampler || this.sampler instanceof LoopedSampler) {
-      this.sampler.triggerAttack(note);
+    
+    if (this.sampler instanceof Tone.Sampler) {
+      this.sampler.triggerAttack(note, Tone.now(), velocity);
+    } else if (this.sampler instanceof LoopedSampler) {
+      this.sampler.triggerAttack(note, velocity);
     } else if (typeof this.sampler.start === 'function') {
+      // smplr uses 0-127
       this.sampler.start({
         note: note,
-        velocity: (velocity ?? 1) * 127
+        velocity: velocity * 127
       });
     }
   }
