@@ -10,5 +10,6 @@ A professional web-based MIDI Rompler built with React, Tone.js, and smplr.
 - [src/App.tsx](src/App.tsx): Main application component and UI state management.
 - [src/audio/engine.ts](src/audio/engine.ts): Hybrid audio engine managing Tone.js samplers and smplr patches.
 - [src/audio/useMidi.ts](src/audio/useMidi.ts): Custom hook for Web MIDI integration and sustain pedal logic.
+- [src/lib/usePersistentState.ts](src/lib/usePersistentState.ts): Custom hook for synchronizing state with localStorage.
 - [src/components/Knob.tsx](src/components/Knob.tsx): Custom skeuomorphic knob component.
 - [src/components/VUMeter.tsx](src/components/VUMeter.tsx): Real-time visual feedback for audio levels.

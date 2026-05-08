@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { usePersistentState } from './lib/usePersistentState';
 import * as Tone from 'tone';
 import { Power, Info, Settings, AlertTriangle, Loader2, ChevronDown } from 'lucide-react';
 import { audioEngine } from './audio/engine';
@@ -8,20 +9,21 @@ import { useMidi } from './audio/useMidi';
 import { cn } from './lib/utils';
 
 export default function App() {
-  const [power, setPower] = useState(false);
-  const [instrument, setInstrument] = useState('piano');
+  const [power, setPower] = useState(true);
+  const [instrument, setInstrument] = usePersistentState('rompler_instrument', 'piano');
   const [isLoading, setIsLoading] = useState(false);
+  const [audioSuspendedWarning, setAudioSuspendedWarning] = useState(false);
   
-  const [volume, setVolume] = useState(-12);
-  const [pan, setPan] = useState(0);
-  const [reverbWet, setReverbWet] = useState(0.2);
-  const [tuningOffset, setTuningOffset] = useState(0);
-  const [midiChannel, setMidiChannel] = useState(1);
+  const [volume, setVolume] = usePersistentState('rompler_volume', -12);
+  const [pan, setPan] = usePersistentState('rompler_pan', 0);
+  const [reverbWet, setReverbWet] = usePersistentState('rompler_reverb_wet', 0.2);
+  const [tuningOffset, setTuningOffset] = usePersistentState('rompler_tuning_offset', 0);
+  const [midiChannel, setMidiChannel] = usePersistentState('rompler_midi_channel', 1);
   
-  const [attack, setAttack] = useState(0.1);
-  const [decay, setDecay] = useState(0.2);
-  const [sustain, setSustain] = useState(1.0);
-  const [release, setRelease] = useState(1.0);
+  const [attack, setAttack] = usePersistentState('rompler_attack', 0.1);
+  const [decay, setDecay] = usePersistentState('rompler_decay', 0.2);
+  const [sustain, setSustain] = usePersistentState('rompler_sustain', 1.0);
+  const [release, setRelease] = usePersistentState('rompler_release', 1.0);
   
   const [infoOpen, setInfoOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -80,12 +82,9 @@ export default function App() {
 
   // Listen to MIDI
   useEffect(() => {
-    if (!midiAccess || !selectedInputId || !power) return;
+    if (!midiAccess || !power) return;
 
-    const input = midiAccess.inputs.get(selectedInputId);
-    if (!input) return;
-
-    const onMidiMessage = (message: any) => {
+    const handleMidiMessage = (message: any) => {
       if (!power || isLoading) return;
       const [status, data1, data2] = message.data;
       
@@ -102,6 +101,11 @@ export default function App() {
         if (data2 === 0) {
           audioEngine.releaseNote(note); // Note on with 0 velocity is note off
         } else {
+          // If a noteOn event occurs and the context is suspended
+          if (Tone.context.state === 'suspended') {
+            setAudioSuspendedWarning(true);
+            return; // Do not pass the note to the engine yet
+          }
           audioEngine.noteOn(note, velocity);
         }
       } else if (isNoteOff) {
@@ -110,12 +114,59 @@ export default function App() {
       }
     };
 
-    input.onmidimessage = onMidiMessage;
+    const inputs = Array.from(midiAccess.inputs.values()) as any[];
+    
+    // Clear previous listeners first...
+    inputs.forEach(input => input.onmidimessage = null);
+
+    if (selectedInputId === 'OMNI') {
+        // Attach to ALL inputs
+        inputs.forEach(input => input.onmidimessage = handleMidiMessage);
+    } else {
+        // Attach to specific input, with fallback validation
+        const targetInput = inputs.find(i => i.id === selectedInputId);
+        if (targetInput) {
+            targetInput.onmidimessage = handleMidiMessage;
+        } else if (inputs.length > 0) {
+            // Fallback: Port not found. Force OMNI.
+            console.warn(`Saved MIDI port ${selectedInputId} not found. Falling back to OMNI.`);
+            setSelectedInputId('OMNI'); 
+            inputs.forEach(input => input.onmidimessage = handleMidiMessage);
+        }
+    }
 
     return () => {
-      input.onmidimessage = null;
+      inputs.forEach(input => input.onmidimessage = null);
     };
-  }, [midiAccess, selectedInputId, power, isLoading, midiChannel]);
+  }, [midiAccess, selectedInputId, power, isLoading, midiChannel, setSelectedInputId]);
+
+  // Interaction Trap for Autoplay compliance
+  useEffect(() => {
+    const initTrap = async () => {
+        if (!audioEngine.isInitialized && power) {
+            try {
+                await audioEngine.init();
+                // Engine is now awake and ready
+                setAudioSuspendedWarning(false);
+            } catch (err) {
+                console.error("Audio initialization failed:", err);
+            }
+        } else if (audioEngine.isInitialized && Tone.context.state !== 'running') {
+            // Resume context if it was suspended
+            await Tone.context.resume();
+            setAudioSuspendedWarning(false);
+        }
+    };
+
+    // Listen for first interaction anywhere on the document
+    window.addEventListener('pointerdown', initTrap, { once: true });
+    window.addEventListener('keydown', initTrap, { once: true });
+
+    return () => {
+        window.removeEventListener('pointerdown', initTrap);
+        window.removeEventListener('keydown', initTrap);
+    };
+  }, [power]);
 
   // Channel Drag Logic
   const channelDragRef = useRef(false);
@@ -156,7 +207,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0c0c0d] flex items-center justify-center p-8 font-sans">
-      
+      {/* Audio Suspended Warning */}
+      {audioSuspendedWarning && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500/90 text-white px-6 py-3 rounded shadow-[0_10px_30px_rgba(255,0,0,0.4)] z-50 flex items-center gap-3 animate-bounce border border-red-400">
+              <AlertTriangle className="w-5 h-5" />
+              <span className="font-bold text-sm tracking-wide">ACTION REQUIRED: Click anywhere on the page to enable audio!</span>
+          </div>
+      )}
+
       {/* Rack Mount Container */}
       <div className="max-w-[760px] w-full flex flex-col items-stretch transform-gpu">
         
@@ -182,7 +240,7 @@ export default function App() {
                    value={selectedInputId}
                    onChange={e => setSelectedInputId(e.target.value)}
                  >
-                   {inputs.length === 0 && <option value="">No Devices Found</option>}
+                   <option value="OMNI">OMNI (All Ports)</option>
                    {inputs.map(i => (
                      <option key={i.id} value={i.id}>{i.name}</option>
                    ))}

@@ -108,6 +108,7 @@ class AudioEngine {
   internalTrim: Tone.Gain | null = null;
   
   isInitialized = false;
+  isInstrumentLoading = false;
 
   async init() {
     if (this.isInitialized) return;
@@ -146,19 +147,20 @@ class AudioEngine {
 
   async loadInstrument(instrument: string): Promise<void> {
     if (!this.isInitialized) return;
+    this.isInstrumentLoading = true;
 
-    // Disconnect and dispose old sampler
-    if (this.sampler) {
-      if (typeof (this.sampler as any).disconnect === 'function') {
-        (this.sampler as any).disconnect();
+    try {
+      // Disconnect and dispose old sampler
+      if (this.sampler) {
+        if (typeof (this.sampler as any).disconnect === 'function') {
+          (this.sampler as any).disconnect();
+        }
+        if (typeof (this.sampler as any).dispose === 'function') {
+          (this.sampler as any).dispose();
+        }
       }
-      if (typeof (this.sampler as any).dispose === 'function') {
-        (this.sampler as any).dispose();
-      }
-    }
 
-    if (instrument === 'strings') {
-      try {
+      if (instrument === 'strings') {
         // 1. Fetch the Base64 JS payload from the CDN
         const response = await fetch('https://gleitz.github.io/midi-js-soundfonts/MusyngKite/string_ensemble_1-ogg.js');
         const text = await response.text();
@@ -178,53 +180,55 @@ class AudioEngine {
         if (this.internalTrim) {
           this.sampler.output.connect(this.internalTrim);
         }
-      } catch (err) {
-        console.error("String sample failed to load:", err);
-      }
-    } else if (SMPLR_MAP[instrument]) {
-      const smplr = new Soundfont(Tone.context.rawContext as AudioContext, {
-        instrument: SMPLR_MAP[instrument] as any,
-        destination: (this.internalTrim as any) || (this.panVol as any)?.input || Tone.context.rawContext.destination
-      });
-      
-      this.sampler = smplr;
-      await smplr.load;
-      console.log(`Loaded ${instrument} (smplr: ${SMPLR_MAP[instrument]})`);
-    } else {
-      const sampleMap = this.getSampleMap(instrument);
-      const baseUrl = `${BASE_URL}${instrument}/`;
-
-      await new Promise<void>((resolve) => {
-        this.sampler = new Tone.Sampler({
-          urls: sampleMap,
-          baseUrl: baseUrl,
-          onload: () => {
-            if (this.sampler && this.internalTrim) {
-              this.sampler.connect(this.internalTrim);
-              console.log(`Loaded ${instrument}`);
-            }
-            resolve();
-          }
+      } else if (SMPLR_MAP[instrument]) {
+        const smplr = new Soundfont(Tone.context.rawContext as AudioContext, {
+          instrument: SMPLR_MAP[instrument] as any,
+          destination: (this.internalTrim as any) || (this.panVol as any)?.input || Tone.context.rawContext.destination
         });
-      });
-    }
+        
+        this.sampler = smplr;
+        await smplr.load;
+        console.log(`Loaded ${instrument} (smplr: ${SMPLR_MAP[instrument]})`);
+      } else {
+        const sampleMap = this.getSampleMap(instrument);
+        const baseUrl = `${BASE_URL}${instrument}/`;
 
-    // Apply Gain Staging Map
-    const gainMap: Record<string, number> = {
-      'electric-piano': 2.0,
-      'vibraphone': 2.0,
-      'strings': 2.0,
-      'celeste': 2.0,
-      'harp': 2.5
-    };
+        await new Promise<void>((resolve) => {
+          this.sampler = new Tone.Sampler({
+            urls: sampleMap,
+            baseUrl: baseUrl,
+            onload: () => {
+              if (this.sampler && this.internalTrim) {
+                this.sampler.connect(this.internalTrim);
+                console.log(`Loaded ${instrument}`);
+              }
+              resolve();
+            }
+          });
+        });
+      }
 
-    if (this.internalTrim) {
-      this.internalTrim.gain.value = gainMap[instrument] || 1.0;
+      // Apply Gain Staging Map
+      const gainMap: Record<string, number> = {
+        'electric-piano': 2.0,
+        'vibraphone': 2.0,
+        'strings': 2.0,
+        'celeste': 2.0,
+        'harp': 2.5
+      };
+
+      if (this.internalTrim) {
+        this.internalTrim.gain.value = gainMap[instrument] || 1.0;
+      }
+    } catch (err) {
+      console.error(`Failed to load ${instrument}:`, err);
+    } finally {
+      this.isInstrumentLoading = false;
     }
   }
 
   noteOn(note: string, velocity: number = 1) {
-    if (!this.sampler || !this.isInitialized) return;
+    if (!this.sampler || !this.isInitialized || this.isInstrumentLoading) return;
     
     if (this.sampler instanceof Tone.Sampler) {
       this.sampler.triggerAttack(note, Tone.now(), velocity);
@@ -240,7 +244,7 @@ class AudioEngine {
   }
 
   releaseNote(note: string | number) {
-    if (!this.sampler || !this.isInitialized) return;
+    if (!this.sampler || !this.isInitialized || this.isInstrumentLoading) return;
     
     // If the instrument is a LoopedSampler
     if (this.sampler instanceof LoopedSampler) {

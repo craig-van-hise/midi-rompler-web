@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { usePersistentState } from '../lib/usePersistentState';
 
 export interface MidiInputInfo {
   id: string;
@@ -7,7 +8,7 @@ export interface MidiInputInfo {
 
 export function useMidi() {
   const [inputs, setInputs] = useState<MidiInputInfo[]>([]);
-  const [selectedInputId, setSelectedInputId] = useState<string>('');
+  const [selectedInputId, setSelectedInputId] = usePersistentState<string>('rompler_midi_input', 'OMNI');
   const [midiAccess, setMidiAccess] = useState<any>(null);
 
   useEffect(() => {
